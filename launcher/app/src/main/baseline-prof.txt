@@ -1,0 +1,6 @@
+# Hand-written: every shipped class and method flagged hot/startup/post-startup, so speed-profile
+# compiles the whole app (see build-and-install.sh). AGP expands the wildcards against the R8 output.
+HSPLcom/gathin/tvhome/**->**(**)**
+Lcom/gathin/tvhome/**
+HSPLandroidx/**->**(**)**
+Landroidx/**

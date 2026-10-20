@@ -11,6 +11,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.ApplicationInfo;
+import android.content.pm.ChangedPackages;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
@@ -151,6 +152,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
     private List<Cards.Card> cards = Collections.emptyList();
     /** The grid has been laid out and focused since the last resume; the card prompt waits for this. */
     private boolean tilesReady;
+    /** PackageManager's package-change counter when the tiles were built (-1: never); it moves even while Home is paused. */
+    private int tilesSequence = -1;
     private Dialog cardPrompt;
     /** Set when a decision could not be saved: no more prompts until the next resume, instead of asking in a loop. */
     private boolean promptsPaused;
@@ -594,8 +597,8 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         if (requestCode == LAUNCHER_SETTINGS_REQUEST && resultCode == RESULT_OK) recreate();
     }
 
-    /** Rebuilds the tiles (and the module cards), then puts focus back where it was. */
-    private void reloadApps(boolean animate) {
+    /** Rebuilds the tiles (and the module cards) unless a resume finds them still right, then puts focus back where it was. */
+    private void reloadApps(boolean resumed) {
         cancelPendingFocusScroll();
         RecyclerView.ViewHolder footer = grid.findViewHolderForAdapterPosition(adapter.appCount());
         final boolean restoreLibrary = adapter.isLibraryAt(adapter.appCount()) && footer != null
@@ -604,7 +607,7 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         // Capture the app before rebinding can move focus and overwrite its key.
         final String returnKey = lastFocusedKey;
         final int returnSlot = lastFocused;
-        final boolean restoreFocus = appLibrary == null && (animate || grid.hasFocus());
+        final boolean restoreFocus = appLibrary == null && (resumed || grid.hasFocus());
         if (restoreFocus) {
             glassShown = false;
             glass.setAlpha(0f);
@@ -612,8 +615,14 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
             heroName.setAlpha(0f);
             ambient.setAlpha(0f);
         }
-        reloadTiles();
-        if (animate && animations && !reducedMotion) grid.scheduleLayoutAnimation();
+        // Back from an app with no package change in between: the tiles are still right, and a rebuild
+        // would open every app's resources and decode every banner again.
+        if (!resumed || tilesSequence < 0 || packageSequence(tilesSequence) != tilesSequence) reloadTiles();
+        if (resumed && animations && !reducedMotion) {
+            grid.scheduleLayoutAnimation();
+            // The animation starts in the grid's own dispatchDraw, which a child's redraw does not re-run.
+            grid.invalidate();
+        }
 
         if (restoreFocus) {
             // Keep a focused footer at the end even when the app count changes.
@@ -642,10 +651,18 @@ public class MainActivity extends Activity implements AppAdapter.TileListener {
         final String returnKey = lastFocusedKey;
         final int returnSlot = lastFocused;
         final List<Cards.Card> none = Collections.emptyList();
+        // Read the counter before querying: a change that lands during the build then still counts as pending.
+        tilesSequence = packageSequence(Math.max(0, tilesSequence));
         cards = moduleCards ? CardFeature.run(() -> Cards.discover(this, hiddenApps, Cards.load(Cards.storeFile(this))), none) : none;
         adapter.reload(cards.isEmpty() ? none : CardFeature.run(() -> Cards.shown(cards), none));
         lastFocusedKey = returnKey;
         lastFocused = returnSlot;
+    }
+
+    /** The package-change counter now; PackageManager only tells it as what changed since a known value. */
+    private int packageSequence(int known) {
+        ChangedPackages changed = getPackageManager().getChangedPackages(known);
+        return changed == null ? known : changed.getSequenceNumber();
     }
 
     /**
