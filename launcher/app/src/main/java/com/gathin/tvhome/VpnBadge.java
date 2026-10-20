@@ -48,6 +48,8 @@ final class VpnBadge extends ReplacementSpan {
 
     @Override
     public int getSize(@NonNull Paint paint, CharSequence text, int start, int end, Paint.FontMetricsInt fm) {
+        // The line's height comes from here when the capsule is the pill's only text.
+        if (fm != null) paint.getFontMetricsInt(fm);
         float old = paint.getTextSize();
         paint.setTextSize(textSize(paint));
         float w = paint.measureText(text, start, end);
