@@ -82,11 +82,18 @@ if ! printf '%s' "$START_OUT" | grep -qF 'Status: ok' || printf '%s' "$START_OUT
   echo "ERROR: the new launcher did not start (see above); $STOCK_LAUNCHER was left enabled." >&2
   exit 1
 fi
+# Android 14+ compiles a home app with speed-profile whatever -m says, a no-op without a profile,
+# and some firmware never saves one from JIT. The broadcast installs the shipped profile (result=1)
+# into the app the start above took out of the stopped state, the compile uses it, and the restart
+# at the end, once Home is ours, runs the compiled code.
 printf '%s\n' \
   "pm grant com.gathin.tvhome android.permission.ACCESS_FINE_LOCATION 2>/dev/null; echo location-granted" \
-  "cmd package compile -m speed -f com.gathin.tvhome" \
+  "am broadcast -a androidx.profileinstaller.action.INSTALL_PROFILE -n com.gathin.tvhome/androidx.profileinstaller.ProfileInstallReceiver | grep -o 'result=[0-9]*'" \
+  "cmd package compile -m speed-profile -f com.gathin.tvhome" \
   "$DISABLE_STOCK" \
   "cmd package set-home-activity --user 0 com.gathin.tvhome/.MainActivity" \
+  "am force-stop com.gathin.tvhome" \
+  "am start -W -n com.gathin.tvhome/.MainActivity | grep -E '^(Status|Error)'" \
   | "$PY" -I ../tools/tv.py --batch
 
 # Home's owner, or an empty string when the TV cannot be reached (pipefail would otherwise make a

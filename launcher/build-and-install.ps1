@@ -73,12 +73,17 @@ Write-Host $start
 if ($start -notmatch 'Status: ok' -or $start -match '(?m)^Error') { throw "the new launcher did not start (see above); $StockLauncher was left enabled" }
 @(
     'pm grant com.gathin.tvhome android.permission.ACCESS_FINE_LOCATION 2>/dev/null; echo location-granted',
-    'cmd package compile -m speed -f com.gathin.tvhome',
+    "am broadcast -a androidx.profileinstaller.action.INSTALL_PROFILE -n com.gathin.tvhome/androidx.profileinstaller.ProfileInstallReceiver | grep -o 'result=[0-9]*'",
+    'cmd package compile -m speed-profile -f com.gathin.tvhome',
     $disableStock,
-    'cmd package set-home-activity --user 0 com.gathin.tvhome/.MainActivity'
+    'cmd package set-home-activity --user 0 com.gathin.tvhome/.MainActivity',
+    'am force-stop com.gathin.tvhome',
+    "am start -W -n com.gathin.tvhome/.MainActivity | grep -E '^(Status|Error)'"
 ) | & $py -I ..\tools\tv.py --batch
-# Order matters, see build-and-install.sh: start the new launcher, disable the stock one, set the
-# preference last, then check where Home ended up and put the stock launcher back if it is not ours.
+# Order matters, see build-and-install.sh: start the new launcher, install the shipped profile
+# (Android 14+ only dexopts a home app with speed-profile) and compile with it, disable the stock
+# launcher, set the preference, restart on the compiled code, then check where Home ended up and put
+# the stock launcher back if it is not ours.
 $homeNow = (& $py -I ..\tools\tv.py 'cmd package resolve-activity --brief -c android.intent.category.HOME -a android.intent.action.MAIN' | Select-Object -Last 1).Trim()
 if ($homeNow -notlike 'com.gathin.tvhome/*') {
     if ($StockLauncher -ne 'none') {
